@@ -2,68 +2,66 @@
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
+from datetime import datetime, timedelta
 
-# بيانات المحطات ومواقعها
-stations = pd.DataFrame({
-    'Name': ['Al Muhsen Station', 'Naft', 'Al Daleel', 'Gas Station 1', 'Gas Station 2'],
-    'Latitude': [24.734223, 24.730529, 24.691334, 24.723658, 24.708406],
-    'Longitude': [46.794444, 46.788447, 46.718527, 46.797141, 46.687040],
-})
+# تحميل البيانات
+stations = pd.read_csv("srbp_stations_fixed_daily.csv")
 
-# موقع محطة SRBP
-srbp = {'Name': 'SRBP (South Riyadh Bulk Plant)', 'Latitude': 24.724824, 'Longitude': 46.757489}
-stations = pd.concat([pd.DataFrame([srbp]), stations], ignore_index=True)
+# إعداد الصفحة
+st.set_page_config(page_title="SRBP Slot Booking with Demand", layout="wide")
+st.title("🛢️ SRBP Slot Booking + Daily Demand Simulation")
 
-# سعة وهمية للمنتجات
-capacity = {
-    'Diesel': 65000,
-    'Gasoline 91': 52000,
-    'Gasoline 95': 26000
-}
+# اختيار محطة
+station_selected = st.selectbox("Select Station", stations[stations["Source"] != "Main Bulk Plant"]["Name"].tolist())
+station_data = stations[stations["Name"] == station_selected].iloc[0]
 
-# تطبيق Streamlit
-st.set_page_config(page_title="SRBP Slot Management", layout="wide")
-st.title("🚛 SRBP Slot Booking Simulation")
+# عرض الكميات اليومية المطلوبة
+st.markdown("### 📦 Daily Demand (bbl)")
+st.write(f"Diesel: {station_data['Diesel_daily_bbl']} bbl/day")
+st.write(f"Gasoline 91: {station_data['Gasoline91_daily_bbl']} bbl/day")
+st.write(f"Gasoline 95: {station_data['Gasoline95_daily_bbl']} bbl/day")
 
-product = st.selectbox("Select Product", list(capacity.keys()))
-requested_qty = st.slider("Requested Quantity (liters)", 5000, 30000, 10000, step=1000)
-current_load = st.slider("Current SRBP Load (liters)", 0, capacity[product], int(capacity[product]*0.6), step=1000)
+# حجز الوقت
+st.markdown("### 🕒 Book a Slot")
+selected_time = st.time_input("Choose time for loading", value=datetime.now().time())
+loading_duration = st.slider("Estimated loading duration (minutes)", 10, 60, 30, step=5)
 
-remaining = capacity[product] - current_load
-st.metric(label="Remaining Capacity", value=f"{remaining:,} L", delta=f"-{requested_qty:,} L")
+arrival_time = datetime.combine(datetime.today(), selected_time)
+departure_time = arrival_time + timedelta(minutes=loading_duration)
 
-if requested_qty > remaining:
-    st.error("⛔ Capacity Exceeded! Try later or redirect to NRBP.")
-    redirect = st.checkbox("Redirect to NRBP?")
-    if redirect:
-        st.success("✅ Request routed to NRBP.")
-else:
-    st.success("✅ Slot Confirmed at SRBP.")
+st.success(f"✅ Slot booked for {station_selected} from {arrival_time.strftime('%H:%M')} to {departure_time.strftime('%H:%M')}")
 
 # عرض الخريطة
-st.subheader("Map of SRBP and Stations")
+st.subheader("🗺️ Map View of Station")
+station_map = pd.DataFrame([{
+    "Latitude": station_data["Latitude"],
+    "Longitude": station_data["Longitude"],
+    "Name": station_data["Name"],
+    "color": [255, 100, 0]
+}])
+
 st.pydeck_chart(pdk.Deck(
     map_style="mapbox://styles/mapbox/streets-v11",
     initial_view_state=pdk.ViewState(
-        latitude=srbp["Latitude"],
-        longitude=srbp["Longitude"],
-        zoom=11,
-        pitch=45,
+        latitude=station_data["Latitude"],
+        longitude=station_data["Longitude"],
+        zoom=13,
+        pitch=30,
     ),
     layers=[
         pdk.Layer(
             "ScatterplotLayer",
-            data=stations,
+            data=station_map,
             get_position='[Longitude, Latitude]',
-            get_color='[0, 100, 200, 160]',
-            get_radius=200,
+            get_color='color',
+            get_radius=300,
         ),
         pdk.Layer(
             "TextLayer",
-            data=stations,
+            data=station_map,
             get_position='[Longitude, Latitude]',
             get_text='Name',
-            get_size=14,
+            get_size=16,
             get_color=[0, 0, 0],
             get_alignment_baseline="'bottom'"
         )
